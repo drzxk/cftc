@@ -346,7 +346,7 @@ async function ensureColumnExists(config, tableName, columnName, columnType) {
     return false; 
   }
 }
-async function setWebhook(webhookUrl, botToken) {
+async function setWebhook(webhookUrl, botToken, secretToken) {
   if (!botToken) {
     console.log('未配置Telegram机器人令牌，跳过webhook设置');
     return true;
@@ -357,7 +357,7 @@ async function setWebhook(webhookUrl, botToken) {
     try {
       console.log(`尝试设置webhook: ${webhookUrl}`);
       const response = await fetch(
-        `https://api.telegram.org/bot${botToken}/setWebhook?url=${webhookUrl}`
+        `https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}&secret_token=${encodeURIComponent(secretToken || '')}`
       );
       if (!response.ok) {
         const errorText = await response.text();
@@ -407,6 +407,7 @@ export default {
       tgBotToken: env.TG_BOT_TOKEN || '',
       tgChatId: env.TG_CHAT_ID ? env.TG_CHAT_ID.split(",") : [], 
       tgStorageChatId: env.TG_STORAGE_CHAT_ID || env.TG_CHAT_ID || '',
+      webhookSecret: env.TG_WEBHOOK_SECRET || '',
       cookie: Number(env.COOKIE) || 7,
       maxSizeMB: Number(env.MAX_SIZE_MB) || 20,
       bucket: env.BUCKET,
@@ -480,7 +481,7 @@ export default {
       try {
         const webhookUrl = `https://${config.domain}/webhook`;
         console.log(`[Webhook] Attempting to set webhook to: ${webhookUrl}`);
-        const webhookSet = await setWebhook(webhookUrl, config.tgBotToken);
+        const webhookSet = await setWebhook(webhookUrl, config.tgBotToken, config.webhookSecret);
         if (!webhookSet) { 
             console.error('[Webhook] FAILED to set webhook after retries.'); 
         } else {
@@ -554,6 +555,12 @@ export default {
 };
 async function handleTelegramWebhook(request, config) {
   try {
+    if (config.webhookSecret) {
+      const got = request.headers.get('x-telegram-bot-api-secret-token');
+      if (got !== config.webhookSecret) {
+        return new Response('forbidden', { status: 403 });
+      }
+    }
     const update = await request.json();
     let chatId;
     let userId;
